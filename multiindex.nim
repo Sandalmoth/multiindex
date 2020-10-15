@@ -2,6 +2,10 @@ import
   macros, typetraits
 
 proc macroReplaceRecursive(old, to: NimNode, ast: NimNode): NimNode =
+  # recursively replace all instances of 'old' nimnodes with 'to'
+  # in the AST given by 'ast'
+  # TODO: implementation works for this case, but may be flawed
+  # TODO: consider making a better implementation
   result = ast.copyNimTree()
   case result.kind:
     of nnkNone, nnkEmpty, nnkNilLit, nnkCharLit..nnkUInt64Lit, nnkFloatLit..nnkFloat64Lit, 
@@ -15,12 +19,18 @@ proc macroReplaceRecursive(old, to: NimNode, ast: NimNode): NimNode =
           result[i] = macroReplaceRecursive(old, to, result[i])
 
 macro forStatic(index: untyped, a, b: static int, body: untyped): untyped =
+  # static for loop emulation which unrolls a statement like
+  # forStatic i, 0, 2:
+  #   echo i
+  # to
+  # echo 0
+  # echo 1
+  # this allows for looping through the elements of a tuple
   result = nnkStmtList.newTree()
   for j in a..<b:
     result.add(
       macroReplaceRecursive(index, newLit(j), body)
     )
-
   echo "-- Unrolled:", body.repr
   echo "-- To:", result.repr, '\n'
 
@@ -59,20 +69,26 @@ proc add(mi: var MultiIndex; val: mi.T) =
     root = mi.root
   forStatic k, 0, mi.T.len:
     while true:
-      echo root.headers
+      echo node.value[k], ' ', root.value[k], ' ', cmp(node.value[k], root.value[k])
       if cmp(node.value[k], root.value[k]) < 0:
+        echo "lesser"
         if root.headers[k].left.isNil:
+          echo "adding l"
           root.headers[k].left = node
           node.headers[k].parent = root
           break
         else:
+          echo "diving l"
           root = root.headers[k].left
       else:
+        echo "greater"
         if root.headers[k].right.isNil:
+          echo "adding r"
           root.headers[k].right = node
           node.headers[k].parent = root
           break
         else:
+          echo "diving r"
           root = root.headers[k].right
     
 
@@ -104,14 +120,22 @@ iterator items(mi: MultiIndex, k: static int): mi.T =
 
 
 
-var mi: MultiIndex[(int, string)]
+var mi: MultiIndex[(int, string, float)]
 
-mi.add((3, "howdy"))
-mi.add((2, "pardner"))
-mi.add((1, "xavier"))
-mi.add((4, "another"))
+mi.add((3, "howdy", 4.5))
+mi.add((2, "pardner", 3.8))
+mi.add((1, "xavier", 29.3))
+mi.add((4, "another", 22.0))
 
 for x in mi.items(0):
   echo x
 for x in mi.items(1):
   echo x
+for x in mi.items(2):
+  echo x
+
+echo "\n"
+echo mi.root.value
+echo mi.root.headers[2].left.value
+echo mi.root.headers[2].right.value
+echo mi.root.headers[2].left.headers[2].right.value
