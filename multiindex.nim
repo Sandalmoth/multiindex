@@ -51,7 +51,44 @@ type
 
   MultiIndex[T: tuple] = object
     roots: array[T.len, ptr Node[T]]
+
+
+iterator nodes[T: tuple](mi: MultiIndex[T], k: static int): ptr Node[T] =
+  # in order traversal of the tree for field k
+  var 
+    leftDone = false
+    walk = mi.roots[k]
+
+  while not walk.isNil:
+    if not leftDone:
+      while not walk.headers[k].left.isNil:
+        walk = walk.headers[k].left
     
+    yield walk
+
+    leftDone = true
+    if not walk.headers[k].right.isNil:
+      leftDone = false
+      walk = walk.headers[k].right
+    elif not walk.headers[k].parent.isNil:
+      while not walk.headers[k].parent.isNil and walk == walk.headers[k].parent.headers[k].right:
+        walk = walk.headers[k].parent
+      if walk.headers[k].parent.isNil:
+        break
+      walk = walk.headers[k].parent
+    else:
+      break
+
+proc `=destroy`[T](mi: var MultiIndex[T]) =
+  # in order traversal of the tree for field k
+  var data: seq[ptr Node[T]]
+  for node in mi.nodes(0):
+    data.add(node)
+  
+  for i in 0..<data.len:
+    `=destroy`(data[i])
+    dealloc(data[i])
+
 
 proc add(mi: var MultiIndex; val: mi.T) =
   var node: ptr Node[mi.T] = create(Node[mi.T])
