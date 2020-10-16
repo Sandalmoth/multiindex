@@ -51,7 +51,7 @@ type
 
   MultiIndex[T: tuple] = object
     roots: array[T.len, ptr Node[T]]
-    size: int
+    counter: int
 
 
 iterator nodes[T: tuple](mi: MultiIndex[T], k: static int): ptr Node[T] =
@@ -80,6 +80,25 @@ iterator nodes[T: tuple](mi: MultiIndex[T], k: static int): ptr Node[T] =
     else:
       break
 
+proc findNode[T: tuple, K](mi: MultiIndex[T], k: static int, key: K): ptr Node[T] =
+  var walk: ptr Node[mi.T]
+  walk = mi.roots[k]
+  while true:
+    let rel = cmp(key, walk.value[k])
+    if rel < 0:
+      if walk.headers[k].left.isNil:
+        break
+      else:
+        walk = walk.headers[k].left
+    elif rel > 0:
+      if walk.headers[k].right.isNil:
+        break
+      else:
+        walk = walk.headers[k].right
+    else:
+      return walk
+  return nil
+
 proc `=destroy`[T](mi: var MultiIndex[T]) =
   # in order traversal of the tree for field k
   var data: seq[ptr Node[T]]
@@ -91,12 +110,12 @@ proc `=destroy`[T](mi: var MultiIndex[T]) =
     dealloc(data[i])
 
 proc len(mi: MultiIndex): int =
-  return mi.size
+  return mi.counter
 
 proc add(mi: var MultiIndex; val: mi.T) =
   var node: ptr Node[mi.T] = create(Node[mi.T])
   node.value = val
-  inc mi.size
+  inc mi.counter
 
   if mi.roots[0].isNil:
     # not very defensive programming, but if one 
@@ -126,7 +145,6 @@ proc add(mi: var MultiIndex; val: mi.T) =
         else:
           walk = walk.headers[k].right
     
-
 iterator items(mi: MultiIndex, k: static int): mi.T =
   # in order traversal of the tree for field k
   var 
@@ -153,6 +171,22 @@ iterator items(mi: MultiIndex, k: static int): mi.T =
     else:
       break
 
+proc hasKey[T: tuple, K](mi: MultiIndex[T], k: static int, key: K): bool =
+  not findNode(mi, k, key).isNil
+
+proc find[T: tuple, K](mi: MultiIndex[T], k: static int, key: K): T =
+  # find the first occurence of key ordered by dimension k
+  let node = findNode(mi, k, key)
+  if node.isNil:
+    raise newException(KeyError, "key not found: " & $key)
+  return node.value
+
+iterator `[]`[T, K](mi: MultiIndex[T], k: static int, key: K): T =
+  discard
+
+# proc contains[T](mi: MultiIndex, k: static int, val: T): bool =
+  # discard # TODO
+
 
 
 
@@ -175,3 +209,8 @@ echo mi.roots[2].value
 echo mi.roots[2].headers[2].left.value
 echo mi.roots[2].headers[2].right.value
 echo mi.roots[2].headers[2].right.headers[2].left.value
+
+echo "\n"
+echo mi.find(0, 3)
+echo mi.find(1, "xavier")
+echo mi.hasKey(1, "jimmy")
