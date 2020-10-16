@@ -18,9 +18,9 @@ proc macroReplaceRecursive(old, to: NimNode, ast: NimNode): NimNode =
         else:
           result[i] = macroReplaceRecursive(old, to, result[i])
 
-macro forStatic(index: untyped, a, b: static int, body: untyped): untyped =
+macro staticFor(index: untyped, a, b: static int, body: untyped): untyped =
   # static for loop emulation which unrolls a statement like
-  # forStatic i, 0, 2:
+  # staticFor i, 0, 2:
   #   echo i
   # to
   # echo 0
@@ -31,6 +31,7 @@ macro forStatic(index: untyped, a, b: static int, body: untyped): untyped =
     result.add(
       macroReplaceRecursive(index, newLit(j), body)
     )
+  # debug printing
   echo "-- Unrolled:", body.repr
   echo "-- To:", result.repr, '\n'
 
@@ -49,75 +50,68 @@ type
     value: T
 
   MultiIndex[T: tuple] = object
-    roots: array[T.len, Header[T]]
-
-
-# proc newNode[T](val: T): Node[T] =
-#   new result
-#   result.value = val
-
-proc add(mi: var MultiIndex; val: mi.T) =
-  discard
-  # var node = newNode(val)
-
-#   if mi.root.isNil:
-#     mi.root = node
-#     return
-
-#   # unbalanced insertion for now
-#   # TODO switch to scapegoat tree
-#   var 
-#     root = mi.root
-#   forStatic k, 0, mi.T.len:
-#     while true:
-#       echo node.value[k], ' ', root.value[k], ' ', cmp(node.value[k], root.value[k])
-#       if cmp(node.value[k], root.value[k]) < 0:
-#         echo "lesser"
-#         if root.headers[k].left.isNil:
-#           echo "adding l"
-#           root.headers[k].left = node
-#           node.headers[k].parent = root
-#           break
-#         else:
-#           echo "diving l"
-#           root = root.headers[k].left
-#       else:
-#         echo "greater"
-#         if root.headers[k].right.isNil:
-#           echo "adding r"
-#           root.headers[k].right = node
-#           node.headers[k].parent = root
-#           break
-#         else:
-#           echo "diving r"
-#           root = root.headers[k].right
+    roots: array[T.len, ptr Node[T]]
     
 
-# iterator items(mi: MultiIndex, k: static int): mi.T =
-#   # in order traversal of the tree for field k
-#   var 
-#     leftDone = false
-#     node = mi.root
+proc add(mi: var MultiIndex; val: mi.T) =
+  var node: ptr Node[mi.T] = create(Node[mi.T])
+  node.value = val
 
-#   while not node.isNil:
-#     if not leftDone:
-#       while not node.headers[k].left.isNil:
-#         node = node.headers[k].left
-      
-#     yield node.value
+  if mi.roots[0].isNil:
+    # not very defensive programming, but if one 
+    # is unset, then the rest should be as well
+    staticFor k, 0, mi.T.tupleLen:
+      mi.roots[k] = node
+    return
 
-#     leftDone = true
-#     if not node.headers[k].right.isNil:
-#       leftDone = false
-#       node = node.headers[k].right
-#     elif not node.headers[k].parent.isNil:
-#       while not node.headers[k].parent.isNil and node == node.headers[k].parent.headers[k].right:
-#         node = node.headers[k].parent
-#       if node.headers[k].parent.isNil:
-#         break
-#       node = node.headers[k].parent
-#     else:
-#       break
+  # unbalanced insertion for now
+  # TODO switch to scapegoat tree
+  var walk: ptr Node[mi.T]
+  staticFor k, 0, mi.T.tupleLen:
+    walk = mi.roots[k]
+    while true:
+      if cmp(node.value[k], walk.value[k]) < 0:
+        if walk.headers[k].left.isNil:
+          walk.headers[k].left = node
+          node.headers[k].parent = walk
+          break
+        else:
+          walk = walk.headers[k].left
+      else:
+        if walk.headers[k].right.isNil:
+          walk.headers[k].right = node
+          node.headers[k].parent = walk
+          break
+        else:
+          walk = walk.headers[k].right
+    
+
+iterator items(mi: MultiIndex, k: static int): mi.T =
+  # in order traversal of the tree for field k
+  var 
+    leftDone = false
+    walk = mi.roots[k]
+
+  while not walk.isNil:
+    if not leftDone:
+      while not walk.headers[k].left.isNil:
+        walk = walk.headers[k].left
+    
+    yield walk.value
+
+    leftDone = true
+    if not walk.headers[k].right.isNil:
+      leftDone = false
+      walk = walk.headers[k].right
+    elif not walk.headers[k].parent.isNil:
+      while not walk.headers[k].parent.isNil and walk == walk.headers[k].parent.headers[k].right:
+        walk = walk.headers[k].parent
+      if walk.headers[k].parent.isNil:
+        break
+      walk = walk.headers[k].parent
+    else:
+      break
+
 
 
 
@@ -128,15 +122,15 @@ mi.add((2, "pardner", 3.8))
 mi.add((1, "xavier", 29.3))
 mi.add((4, "another", 22.0))
 
-# for x in mi.items(0):
-#   echo x
-# for x in mi.items(1):
-#   echo x
-# for x in mi.items(2):
-#   echo x
+for x in mi.items(0):
+  echo x
+for x in mi.items(1):
+  echo x
+for x in mi.items(2):
+  echo x
 
-# echo "\n"
-# echo mi.root.value
-# echo mi.root.headers[2].left.value
-# echo mi.root.headers[2].right.value
-# echo mi.root.headers[2].left.headers[2].right.value
+echo "\n"
+echo mi.roots[2].value
+echo mi.roots[2].headers[2].left.value
+echo mi.roots[2].headers[2].right.value
+echo mi.roots[2].headers[2].right.headers[2].left.value
