@@ -51,6 +51,7 @@ type
 
   MultiIndex[T: tuple] = object
     roots: array[T.len, ptr Node[T]]
+    size: int
 
 
 iterator nodes[T: tuple](mi: MultiIndex[T], k: static int): ptr Node[T] =
@@ -89,10 +90,13 @@ proc `=destroy`[T](mi: var MultiIndex[T]) =
     `=destroy`(data[i])
     dealloc(data[i])
 
+proc len(mi: MultiIndex): int =
+  return mi.size
 
 proc add(mi: var MultiIndex; val: mi.T) =
   var node: ptr Node[mi.T] = create(Node[mi.T])
   node.value = val
+  inc mi.size
 
   if mi.roots[0].isNil:
     # not very defensive programming, but if one 
