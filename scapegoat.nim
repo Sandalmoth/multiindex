@@ -1,4 +1,4 @@
-import algorithm, random
+import algorithm, random, sequtils
 
 type
   Node[T] = object
@@ -13,6 +13,7 @@ type
 proc `$`[T](node: ptr Node[T]): string =
   if node.isNil:
     return
+  # echo node.left.addr, ' ', node.value, ' ', node.right.addr
   result = '(' & $node.left & ' ' & $node.value & ' ' & $node.right & ')'
 
 
@@ -90,13 +91,11 @@ proc insert[T](m: var Multiset[T], x: T) =
 proc erase[T](m: var Multiset[T], node: var ptr Node[T]) =
   if node.left.isNil and node.right.isNil:
     # leaf
-    echo "leaf"
     if node.parent.left == node:
       node.parent.left = nil
     else: node.parent.right = nil
   elif node.left.isNil xor node.right.isNil:
     # one child
-    echo "one"
     var child: ptr Node[T]
     if node.left.isNil:
       child = node.right
@@ -113,12 +112,16 @@ proc erase[T](m: var Multiset[T], node: var ptr Node[T]) =
       child.parent = node.parent
   else:
     # two children
-    echo "two"
     var succ = node
     succ.next()
-    # if succ.parent.left == succ:
-      # succ.parent.left = nil
-    # else: succ.parent.right = nil
+    if node.parent.isNil:
+      m.root = succ
+    else:
+      if node.parent.left == node:
+        node.parent.left = succ
+      else:
+        node.parent.right = succ
+    # successor is guaranteed to have either no children or one right child
     if succ.parent.left == succ:
       succ.parent.left = succ.right
     else:
@@ -128,6 +131,9 @@ proc erase[T](m: var Multiset[T], node: var ptr Node[T]) =
     succ.left = node.left
     succ.right = node.right
     succ.parent = node.parent
+    node.left.parent = succ
+    if not node.right.isNil:
+      node.right.parent = succ
 
   `=destroy`(node)
   dealloc(node)
@@ -155,31 +161,46 @@ proc find[T](m: Multiset[T], x: T): ptr Node[T] =
       return walk
   return nil
 
+proc count[T](m: Multiset[T], x: T): int =
+  # consider better implementation
+  # this has O(N) worst case
+  # (for instance, container of all same value)
+  var first, last = m.find(x)
+  if first.isNil:
+    return 0
+  last.next()
+  while not first.isNil and first.value == x:
+    first.prev()
+    inc result
+  while not last.isNil and last.value == x:
+    last.next()
+    inc result
+
 
 var
   m: Multiset[int]
   v: seq[int]
 
+const
+  N = 100000
+  X = 10000
+
 randomize()
-for i in 0..<10:
-  let x = rand(100 div 2)
-  echo x
+for i in 0..<N:
+  let x = rand(X)
   m.insert(x)
   v.add(x)
 
 var
-  to_erase = v[0..<(v.len div 6)].sorted()
-  remainder = v[(v.len div 6)..<v.len].sorted()
+  to_erase = v[0..<(v.len div 3)].sorted()
+  remainder = v[(v.len div 3)..<v.len].sorted()
   vst = v.sorted()
-
-echo m
 
 block:
   var 
     it = m.first()
     i = 0
   while not it.isNil:
-    echo it.value, ' ', vst[i]
     assert it.value == vst[i]
     it.next()
     inc i
@@ -189,27 +210,40 @@ block:
     it = m.last()
     i = 1
   while not it.isNil:
-    echo it.value, ' ', vst[^i]
     assert it.value == vst[^i]
     it.prev()
     inc i
 
-echo "erasing"
+echo "passed insert test"
 
 block:
   for x in to_erase:
     var it = m.find(x)
-    echo x, ' ', it.value
     m.erase(it)
-
-echo m
 
 block:
   var 
     it = m.first()
     i = 0
   while not it.isNil:
-    echo it.value, ' ', remainder[i]
     assert it.value == remainder[i]
     it.next()
     inc i
+
+block:
+  var 
+    it = m.last()
+    i = 1
+  while not it.isNil:
+    assert it.value == remainder[^i]
+    it.prev()
+    inc i
+
+echo "passed erase test"
+
+block:
+  for i in 0..<1000:
+    let x = rand(X)
+    assert m.count(x) == remainder.count(x)
+
+echo "passed count test"
