@@ -1,5 +1,8 @@
 import algorithm, random, sequtils
 
+const
+  balance_limit = 1
+
 type
   Node[T] = object
     left, right, parent: ptr Node[T]
@@ -19,6 +22,13 @@ proc `$`[T](node: ptr Node[T]): string =
 
 proc `$`[T](m: Multiset[T]): string =
   result = "size: " & $m.size & " tree: " & $m.root
+
+
+proc size[T](node: ptr Node[T]): int =
+  # for production code, non-recursive size is probably preferable
+  if node.isNil:
+    return 0
+  result = 1 + node.left.size + node.right.size
 
 
 proc first[T](m: Multiset[T]): ptr Node[T] =
@@ -61,6 +71,45 @@ proc prev[T](node: var ptr Node[T]) =
       node = node.right
 
 
+proc findScapegoat[T](m: Multiset[T], node: ptr Node[T]): ptr Node[T] =
+  if node == m.root:
+    return nil
+  result = node
+  while abs(result.left.size - result.right.size) <= balance_limit:
+    if result == m.root:
+      return nil
+    result = result.parent
+
+
+proc flatten[T](root: var ptr Node[T]): ptr Node[T] =
+  # flatten a subtree into a doubly linked list, returning the first node
+  result = root
+  while not result.left.isNil:
+    result = result.left
+  var 
+    last, walk = result
+  walk.next()
+  last.left = nil
+  while not walk.isNil:
+    last.right = walk
+    last.parent = nil
+    last = walk
+
+
+proc buildFromSorted[T](first: var ptr Node[T], size: int): ptr Node[T] =
+  # build a sorted bst from doubly linked list
+  result = first
+  for i in 0..<(size div 2):
+    result = result.right
+  var second = result.right
+  if not result.left.isNil: 
+    result.left.right = nil
+  if not result.right.isNil:
+    result.right.left = nil
+  result.left = buildFromSorted(first, size div 2)
+  result.right = buildFromSorted(first, size div 2 - 1)
+
+
 proc insert[T](m: var Multiset[T], x: T) =
   var node: ptr Node[T] = create(Node[T])
   node.value = x
@@ -87,6 +136,9 @@ proc insert[T](m: var Multiset[T], x: T) =
         break
       else: walk = walk.right
 
+  var scapegoat = m.findScapegoat(node)
+  if not scapegoat.isNil:
+    echo "BALANCING"
 
 proc erase[T](m: var Multiset[T], node: var ptr Node[T]) =
   if node.left.isNil and node.right.isNil:
