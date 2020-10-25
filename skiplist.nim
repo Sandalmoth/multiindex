@@ -26,6 +26,7 @@ proc `$`[T](m: Multiset[T]): string =
   for i in 0..<m.level:
     var walk = m.sentinel.next[i]
     var j = 0
+    echo i
     while not walk.isNil:
       # echo fmt"{cast[int](walk):#x}"
       # echo j, "\t", walk.value
@@ -97,8 +98,8 @@ var
 m.init()
 
 const
-  N = 200
-  X = 999
+  N = 500
+  X = 9
 
 randomize()
 for i in 0..<N:
@@ -107,5 +108,15 @@ for i in 0..<N:
   v.add(x)
 
 
+var 
+  f = m.first()
+  j = 0
+echo f.type
+while not f.isNil:
+  echo j, ' ', f.value
+  next(f)
+  inc j
+
+
 echo "level ", m.level
-echo m
+# echo m
