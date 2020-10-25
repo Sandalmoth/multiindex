@@ -64,7 +64,7 @@ proc insert[T](m: var Multiset[T], x: T) =
   let 
     height = pickHeight()
     next = alloc0(sizeof(ptr Node[T])*height)
-    stack = alloc0(sizeof(ptr Node[T])*height)
+    stack = alloc0(sizeof(ptr Node[T])*max(height, m.level))
   node.value = x
   node.next = cast[ptr UncheckedArray[ptr Node[T]]](next)
   update = cast[ptr UncheckedArray[ptr Node[T]]](stack)
