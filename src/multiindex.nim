@@ -17,6 +17,10 @@
 # 3. This notice may not be removed or altered from any source distribution.
 
 
+# Code relating to treap operations is written in part according to
+# opendatastructures.org, c++ edition (Oct 2020)
+
+
 ## This module implements a container for tuples that supports logarithmic time
 ## searching as well as ordered iteration along any of the tuple fields.
 ## 
@@ -143,7 +147,7 @@ proc toString[T](node: ptr Node[T], k: static int): string =
            ':' & $node.priority & ' ' & $node.headers[k].right.tostring(k) & ']'
 
 
-proc `$`[T](m: Multiindex[T]): string =
+proc `$`*[T](m: Multiindex[T]): string =
   result = "size: " & $m.counter & '\n'
   staticFor k, 0, T.multiindexTupleLen:
     result = result & $k & " tree: " & m.roots[k].toString(k) & '\n'
@@ -340,15 +344,17 @@ proc find*[T](m: Multiindex[T], x: T): ptr Node[T] =
   ## However, if the container changes, the element found may change as well
   ## so long as it fulfills ``result.value == x``.
   var up, down = m.find(0, x[0])
+  if up.isNil:
+    return nil
   while not down.isNil and down.value[0] == x[0]:
     if down.value == x:
       return down
-    down.prev()
-  up.next()
+    down.prev(0)
+  up.next(0)
   while not up.isNil and up.value[0] == x[0]:
     if up.value == x:
       return up
-    up.next()
+    up.next(0)
   return nil
 
 
@@ -408,7 +414,7 @@ proc count*[T, U](m: Multiindex[T], k: static int, x: U): int =
 
 proc count*[T](m: Multiindex[T], x: T): int =
   ## Count the number of elements that exactly equal ``x``.
-  var first, last = m.find(0, x[0])
+  var first, last = m.find(x)
   if first.isNil:
     return 0
   last.next(0)
