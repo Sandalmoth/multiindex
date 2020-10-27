@@ -52,18 +52,11 @@ type
     counter: int
 
 
-proc `$`[T](node: ptr Node[T]): string =
-  if node.isNil:
-    return
-  result = '[' & $node.headers[0].left & ' ' & $node.value & 
-           ':' & $node.priority & ' ' & $node.headers[0].right & ']'
-
-
 proc toString[T](node: ptr Node[T], k: static int): string =
   if node.isNil:
     return
-  result = '[' & $node.headers[k].left & ' ' & $node.value & 
-           ':' & $node.priority & ' ' & $node.headers[k].right & ']'
+  result = '[' & $node.headers[k].left.tostring(k) & ' ' & $node.value[k] & 
+           ':' & $node.priority & ' ' & $node.headers[k].right.tostring(k) & ']'
 
 
 proc `$`[T](m: Multiindex[T]): string =
@@ -157,8 +150,9 @@ proc incl[T](m: var Multiindex[T], x: T) =
   node.priority = rand(99)#rand(int.high)
 
   if m.roots[0].isNil:
-    staticFor k, 0, m.T.tupleLen:
+    for k in 0..<T.tupleLen:
       m.roots[k] = node
+    inc m.counter
     return
 
   # insert new node
@@ -186,13 +180,12 @@ proc incl[T](m: var Multiindex[T], x: T) =
       else:
         m.rotateRight(k, node.headers[k].parent)
     if node.headers[k].parent.isNil:
-      echo "updating root: ", k
       m.roots[k] = node
 
   inc m.counter
 
 
-proc erase[T](m: var Multiindex[T], node: var ptr Node[T]) =
+proc excl[T](m: var Multiindex[T], node: ptr Node[T]) =
   var walk: ptr Node[T]
   staticFor k, 0, m.T.tupleLen:
     walk = node
@@ -216,8 +209,8 @@ proc erase[T](m: var Multiindex[T], node: var ptr Node[T]) =
       walk.headers[k].parent.headers[k].right = nil
   
   dec m.counter
-  `=destroy`(node)
-  dealloc(node)
+  `=destroy`(walk)
+  dealloc(walk)
 
 
 proc find[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
@@ -310,6 +303,48 @@ proc count[T](m: Multiindex[T], x: T): int =
     inc result
 
 
+proc clear[T](m: var Multiindex[T]) =
+  var 
+    data: seq[ptr Node[T]]
+    walk = m.first(0)
+
+  while not walk.isNil:
+    data.add(walk)
+    walk.next(0)
+
+  for i in 0..<data.len:
+    `=destroy`(data[i])
+    dealloc(data[i])
+  
+  m.counter = 0
+  for k in 0..<T.tupleLen:
+    m.roots[k] = nil
+
+
+proc `=destroy`[T](m: var Multiindex[T]) =
+  # in order traversal of the tree for field k
+  m.clear()
+
+
+# default version should work just the same
+# proc `=sink`[T](a: var Multiindex[T], b: Multiindex[T]) =
+#   `=destroy`(a)
+#   wasMoved(a)
+#   a.roots = b.roots
+#   a.counter = b.counter
+
+
+proc `=copy`[T](a: var Multiindex[T], b: Multiindex[T]) =
+  if a.roots == b.roots:
+    return
+  `=destroy`(a)
+  wasMoved(a)
+  var walk = b.first(0)
+  while not walk.isNil:
+    a.incl(walk.value)
+    walk.next(0)
+
+
 randomize(1)
 
 var m: Multiindex[(int, string, float)]
@@ -359,7 +394,9 @@ block:
     it.prev(2)
   echo " "
 
-m.erase(m.roots[1])
+echo m
+m.excl(m.roots[1])
+echo m
 
 block:
   var it = m.first(0)
@@ -393,3 +430,14 @@ block:
     echo it.value, '\t', it.priority
     it.prev(2)
   echo " "
+
+block:
+  var m2: m.type
+  m2 = m
+
+  m2.incl((123, "yo", 1.23))
+
+  echo "yo"
+  echo m
+  echo "yo"
+  echo m2
