@@ -1,3 +1,75 @@
+# Copyright (c) 2020 Jonathan Lindström
+# 
+# This software is provided 'as-is', without any express or implied
+# warranty. In no event will the authors be held liable for any damages
+# arising from the use of this software.
+# 
+# Permission is granted to anyone to use this software for any purpose,
+# including commercial applications, and to alter it and redistribute it
+# freely, subject to the following restrictions:
+# 
+# 1. The origin of this software must not be misrepresented; you must not
+#    claim that you wrote the original software. If you use this software
+#    in a product, an acknowledgment in the product documentation would be
+#    appreciated but is not required.
+# 2. Altered source versions must be plainly marked as such, and must not be
+#    misrepresented as being the original software.
+# 3. This notice may not be removed or altered from any source distribution.
+
+
+## This module implements a container for tuples that supports logarithmic time
+## searching as well as ordered iteration along any of the tuple fields.
+## 
+## Basic usage
+## -----------
+##
+## .. code-block::
+##   import multiindex
+##
+##   var m: Multiindex[(int, string)]
+##
+##   m.incl((3, "defeat"))
+##   m.incl((1, "elephants"))
+##   m.incl((5, "bug"))
+##   m.incl((2, "can"))
+##   m.incl((4, "a"))
+##
+##   var it = m.first(0)
+##   while not it.isNil:
+##     echo it.value
+##     it.next(0)
+## 
+##   # (1, "elephants")
+##   # (2, "can")
+##   # (3, "defeat")
+##   # (4, "a")
+##   # (5, "bug")
+##
+##   it = m.first(1)
+##   while not it.isNil:
+##     echo it.value
+##     it.next(1)
+## 
+##   # (4, "a")
+##   # (5, "bug")
+##   # (2, "can")
+##   # (3, "defeat")
+##   # (1, "elephants")
+## 
+## Caveats
+## -------
+## 
+## Performance in some operations scale not just with log(N), but also with 
+## the number of equivalent elements. As tuple position 0 is used as default
+## performance may improve by ensuring that position 0 is the one where all
+## elements have the least amount of overlap.
+##
+## The container is not deterministic with regards to equivalent keys.
+## It does not support multithreading
+## and makes calls to the default instance of rand.
+## 
+
+
 import 
   macros, typetraits, random
 
@@ -37,18 +109,30 @@ macro staticFor(index: untyped, a, b: static int, body: untyped): untyped =
   # echo "-- Unrolled:", body.repr
   # echo "-- To:", result.repr, '\n'
 
+# unclear why t.type.arity and multiindexTupleLen don't work as expected.
+# Unfortunately, this has to be exported for the code to work.
+# This makes it possible to access the number of elements in
+# a tuple without issue however, and with a familiar syntax.
+func multiindexTupleLen*(t: typedesc): static int =
+  t.type.arity
 
 type
   Header[T] = object
     parent, left, right: ptr Node[T]
 
-  Node[T: tuple] = object
-    headers: array[T.tupleLen, Header[T]]
+  Node*[T: tuple] = object
+    ## Node of the internal treap.
+    ## Node pointers are used to access elements
+    ## similar to a C++ iterator.
+    headers: array[T.multiindexTupleLen, Header[T]]
     priority: int
-    value: T
+    value*: T
 
-  Multiindex[T: tuple] = object
-    roots: array[T.tupleLen, ptr Node[T]]
+  Multiindex*[T: tuple] = object
+    ## Multiset type container for tuples.
+    ## Supports searching and ordered iteration along any
+    ## of the tuple dimensions.
+    roots: array[T.multiindexTupleLen, ptr Node[T]]
     counter: int
 
 
@@ -61,14 +145,17 @@ proc toString[T](node: ptr Node[T], k: static int): string =
 
 proc `$`[T](m: Multiindex[T]): string =
   result = "size: " & $m.counter & '\n'
-  staticFor k, 0, T.tupleLen:
+  staticFor k, 0, T.multiindexTupleLen:
     result = result & $k & " tree: " & m.roots[k].toString(k) & '\n'
 
-proc len[T](m: Multiindex[T]): int =
+
+proc len*[T](m: Multiindex[T]): int =
+  ## Returns the number of items in ``m``.
   m.counter
 
 
-proc first[T](m: Multiindex[T], k: static int): ptr Node[T] =
+proc first*[T](m: Multiindex[T], k: static int): ptr Node[T] =
+  ## Return a pointer to the leftmost (smallest) item in ``m`` along dimension ``k``.
   if m.roots[k].isNil:
     return nil
 
@@ -77,7 +164,8 @@ proc first[T](m: Multiindex[T], k: static int): ptr Node[T] =
     result = result.headers[k].left
 
 
-proc last[T](m: Multiindex[T], k: static int): ptr Node[T] =
+proc last*[T](m: Multiindex[T], k: static int): ptr Node[T] =
+  ## Return a pointer to the rightmost (largest) item in ``m`` along dimension ``k``.
   if m.roots[k].isNil:
     return nil
 
@@ -86,7 +174,8 @@ proc last[T](m: Multiindex[T], k: static int): ptr Node[T] =
     result = result.headers[k].right
 
 
-proc next[T](node: var ptr Node[T], k: static int) =
+proc next*[T](node: var ptr Node[T], k: static int) =
+  ## Move pointer right (towards greater values) in dimension ``k``.
   if node.headers[k].right.isNil:
     while not node.headers[k].parent.isNil and node == node.headers[k].parent.headers[k].right:
       node = node.headers[k].parent
@@ -97,7 +186,8 @@ proc next[T](node: var ptr Node[T], k: static int) =
       node = node.headers[k].left
 
 
-proc prev[T](node: var ptr Node[T], k: static int) =
+proc prev*[T](node: var ptr Node[T], k: static int) =
+  ## Move pointer left (towards smaller values) in dimension ``k``.
   if node.headers[k].left.isNil:
     while not node.headers[k].parent.isNil and node == node.headers[k].parent.headers[k].left:
       node = node.headers[k].parent
@@ -144,20 +234,21 @@ proc rotateRight[T](m: var Multiindex[T], k: static int, u: ptr Node[T]) =
     w.headers[k].parent = nil
 
 
-proc incl[T](m: var Multiindex[T], x: T) =
+proc incl*[T](m: var Multiindex[T], x: T) =
+  ## Add a tuple ``x`` to the container ``m``
   let node: ptr Node[T] = create(Node[T])
   node.value = x
-  node.priority = rand(99)#rand(int.high)
+  node.priority = rand(int.high)
 
   if m.roots[0].isNil:
-    for k in 0..<T.tupleLen:
+    for k in 0..<T.multiindexTupleLen:
       m.roots[k] = node
     inc m.counter
     return
 
   # insert new node
   var walk: ptr Node[T]
-  staticFor k, 0, m.T.tupleLen:
+  staticFor k, 0, m.T.multiindexTupleLen:
     walk = m.roots[k]
     while true:
       if cmp(node.value[k], walk.value[k]) < 0:
@@ -185,9 +276,11 @@ proc incl[T](m: var Multiindex[T], x: T) =
   inc m.counter
 
 
-proc excl[T](m: var Multiindex[T], node: ptr Node[T]) =
+proc excl*[T](m: var Multiindex[T], node: ptr Node[T]) =
+  ## Remove a tuple indicated by the pointer ``node`` from the container ``m``.
+  ## Trying to remove a node not present in the container causes undefined behaviour.
   var walk: ptr Node[T]
-  staticFor k, 0, m.T.tupleLen:
+  staticFor k, 0, m.T.multiindexTupleLen:
     walk = node
   # move node so that it becomes a leaf
     while not (walk.headers[k].left.isNil and walk.headers[k].right.isNil):
@@ -213,7 +306,12 @@ proc excl[T](m: var Multiindex[T], node: ptr Node[T]) =
   dealloc(walk)
 
 
-proc find[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+proc find*[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+  ## Find an element with the value ``x`` in tuple dimension ``k``.
+  ## The result is deterministic in the sense that calling it twice without
+  ## modifying ``m`` in between will produce the same result.
+  ## However, if the container changes, the element found may change as well
+  ## so long as it fulfills ``result.value[k] == x``.
   if m.roots[k].isNil:
     return nil
 
@@ -235,7 +333,12 @@ proc find[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
   return nil
 
 
-proc find[T](m: Multiindex[T], x: T): ptr Node[T] =
+proc find*[T](m: Multiindex[T], x: T): ptr Node[T] =
+  ## Find a node that exactly matches the tuple ``x``.
+  ## The result is deterministic in the sense that calling it twice without
+  ## modifying ``m`` in between will produce the same result.
+  ## However, if the container changes, the element found may change as well
+  ## so long as it fulfills ``result.value == x``.
   var up, down = m.find(0, x[0])
   while not down.isNil and down.value[0] == x[0]:
     if down.value == x:
@@ -249,35 +352,48 @@ proc find[T](m: Multiindex[T], x: T): ptr Node[T] =
   return nil
 
 
-proc findFirst[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+proc findFirst*[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+  ## Similar to `find proc<#find,Multiindex[T],staticint,U>`_ but is guaranteed to
+  ## the first one along the given dimension. In other words, the
+  ## predecessor to the result is either smaller along dimension ``k``, 
+  ## or ``nil``
   var walk = m.find(k, x)
   while not walk.isNil and walk.value[k] == x:
     result = walk
     walk.prev(k)
 
 
-proc findFirst[T](m: Multiindex[T], x: T): ptr Node[T] =
+proc findFirst*[T](m: Multiindex[T], x: T): ptr Node[T] =
+  ## Similar to `find proc<#find,Multiindex[T],T>`_ but is guaranteed to
+  ## the first one along the given dimension.
   var walk = m.find(0, x[0])
   while not walk.isNil and walk.value == x:
     result = walk
     walk.prev(0)
 
 
-proc findLast[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+proc findLast*[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+  ## Similar to `find proc<#find,Multiindex[T],staticint,U>`_ but is guaranteed to
+  ## the last one along the given dimension. In other words, the
+  ## successor to the result is either smaller along dimension ``k``, 
+  ## or ``nil``
   var walk = m.find(k, x)
   while not walk.isNil and walk.value[k] == x:
     result = walk
     walk.next(k)
 
 
-proc findLast[T](m: Multiindex[T], x: T): ptr Node[T] =
+proc findLast*[T](m: Multiindex[T], x: T): ptr Node[T] =
+  ## Similar to `find proc<#find,Multiindex[T],T>`_ but is guaranteed to
+  ## the last one along the given dimension.
   var walk = m.find(0, x[0])
   while not walk.isNil and walk.value == x:
     result = walk
     walk.next(0)
 
 
-proc count[T, U](m: Multiindex[T], k: static int, x: U): int =
+proc count*[T, U](m: Multiindex[T], k: static int, x: U): int =
+  ## Count the number of elements that equal ``x`` in dimension ``k``.
   var first, last = m.find(k, x)
   if first.isNil:
     return 0
@@ -290,7 +406,8 @@ proc count[T, U](m: Multiindex[T], k: static int, x: U): int =
     inc result
 
 
-proc count[T](m: Multiindex[T], x: T): int =
+proc count*[T](m: Multiindex[T], x: T): int =
+  ## Count the number of elements that exactly equal ``x``.
   var first, last = m.find(0, x[0])
   if first.isNil:
     return 0
@@ -303,7 +420,8 @@ proc count[T](m: Multiindex[T], x: T): int =
     inc result
 
 
-proc clear[T](m: var Multiindex[T]) =
+proc clear*[T](m: var Multiindex[T]) =
+  ## Remove all elements from the container.
   var 
     data: seq[ptr Node[T]]
     walk = m.first(0)
@@ -317,7 +435,7 @@ proc clear[T](m: var Multiindex[T]) =
     dealloc(data[i])
   
   m.counter = 0
-  for k in 0..<T.tupleLen:
+  for k in 0..<T.multiindexTupleLen:
     m.roots[k] = nil
 
 
@@ -343,131 +461,3 @@ proc `=copy`[T](a: var Multiindex[T], b: Multiindex[T]) =
   while not walk.isNil:
     a.incl(walk.value)
     walk.next(0)
-
-
-randomize(1)
-
-var m: Multiindex[(int, string, float)]
-
-m.incl((1, "howdy", 4.5))
-echo m
-m.incl((2, "xavier", 29.3))
-echo m
-m.incl((3, "pardner", 3.8))
-echo m
-m.incl((4, "another", 22.0))
-echo m
-
-for i in 0..<3:
-  echo cast[int](m.roots[i])
-
-block:
-  var it = m.first(0)
-  while not it.isNil:
-    echo it.value, '\t', it.priority, '\t', cast[int](it)
-    it.next(0)
-  it = m.last(0)
-  while not it.isNil:
-    echo it.value, '\t', it.priority
-    it.prev(0)
-  echo " "
-
-block:
-  var it = m.first(1)
-  while not it.isNil:
-    echo it.value, '\t', it.priority, '\t', cast[int](it)
-    it.next(1)
-  it = m.last(1)
-  while not it.isNil:
-    echo it.value, '\t', it.priority
-    it.prev(1)
-  echo " "
-
-block:
-  var it = m.first(2)
-  while not it.isNil:
-    echo it.value, '\t', it.priority, '\t', cast[int](it)
-    it.next(2)
-  it = m.last(2)
-  while not it.isNil:
-    echo it.value, '\t', it.priority
-    it.prev(2)
-  echo " "
-
-echo m
-m.excl(m.roots[1])
-echo m
-
-block:
-  var it = m.first(0)
-  while not it.isNil:
-    echo it.value, '\t', it.priority, '\t', cast[int](it)
-    it.next(0)
-  it = m.last(0)
-  while not it.isNil:
-    echo it.value, '\t', it.priority
-    it.prev(0)
-  echo " "
-
-block:
-  var it = m.first(1)
-  while not it.isNil:
-    echo it.value, '\t', it.priority, '\t', cast[int](it)
-    it.next(1)
-  it = m.last(1)
-  while not it.isNil:
-    echo it.value, '\t', it.priority
-    it.prev(1)
-  echo " "
-
-block:
-  var it = m.first(2)
-  while not it.isNil:
-    echo it.value, '\t', it.priority, '\t', cast[int](it)
-    it.next(2)
-  it = m.last(2)
-  while not it.isNil:
-    echo it.value, '\t', it.priority
-    it.prev(2)
-  echo " "
-
-block:
-  var m2: m.type
-  m2 = m
-
-  m2.incl((123, "yo", 1.23))
-
-  echo "yo"
-  echo m
-  echo "yo"
-  echo m2
-
-m.incl((1, "howdy", 4.5))
-m.incl((1, "howdy", 4.5))
-m.incl((2, "a", 1002.0))
-m.incl((2, "b", 1001.0))
-m.incl((2, "c", 1000.0))
-
-staticFor k, 0, 3:
-  block:
-    var it = m.first(k)
-    while not it.isNil:
-      echo it.value, '\t', it.priority, '\t', cast[int](it)
-      it.next(k)
-    echo " "
-
-echo m
-echo m.find(0, 2).value
-echo m.findFirst(0, 2).value
-echo m.findLast(0, 2).value
-var 
-  zz1 = m.findFirst((1, "howdy", 4.5))
-  zz2 = m.findLast((1, "howdy", 4.5))
-zz1.prev(1)
-zz2.next(1)
-echo zz1.value
-echo zz2.value
-
-echo m.count((1, "howdy", 4.5))
-echo m.count(0, 2)
-echo m.count(0, 123123)
