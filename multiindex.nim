@@ -1,5 +1,6 @@
 import 
-  macros, typetraits
+  macros, typetraits, random
+
 
 proc macroReplaceRecursive(old, to: NimNode, ast: NimNode): NimNode =
   # recursively replace all instances of 'old' nimnodes with 'to'
@@ -18,6 +19,7 @@ proc macroReplaceRecursive(old, to: NimNode, ast: NimNode): NimNode =
         else:
           result[i] = macroReplaceRecursive(old, to, result[i])
 
+
 macro staticFor(index: untyped, a, b: static int, body: untyped): untyped =
   # static for loop emulation which unrolls a statement like
   # staticFor i, 0, 2:
@@ -35,56 +37,196 @@ macro staticFor(index: untyped, a, b: static int, body: untyped): untyped =
   echo "-- Unrolled:", body.repr
   echo "-- To:", result.repr, '\n'
 
-# unclear why t.type.arity sometimes cannot be used directly.
-# This makes it possible to access the number of elements in
-# a tuple without issue however, and with a familiar syntax.
-func len(t: typedesc): static int =
-  t.type.arity
 
 type
   Header[T] = object
     parent, left, right: ptr Node[T]
 
   Node[T: tuple] = object
-    headers: array[T.len, Header[T]]
+    headers: array[T.tupleLen, Header[T]]
+    priority: int
     value: T
 
-  MultiIndex[T: tuple] = object
-    roots: array[T.len, ptr Node[T]]
+  Multiindex[T: tuple] = object
+    roots: array[T.tupleLen, ptr Node[T]]
     counter: int
 
 
-iterator nodes[T: tuple](mi: MultiIndex[T], k: static int): ptr Node[T] =
-  # in order traversal of the tree for field k
-  var 
-    leftDone = false
-    walk = mi.roots[k]
+proc `$`[T](node: ptr Node[T]): string =
+  if node.isNil:
+    return
+  result = '[' & $node.headers[0].left & ' ' & $node.value & 
+           ':' & $node.priority & ' ' & $node.headers[0].right & ']'
 
-  while not walk.isNil:
-    if not leftDone:
-      while not walk.headers[k].left.isNil:
-        walk = walk.headers[k].left
-    
-    yield walk
 
-    leftDone = true
-    if not walk.headers[k].right.isNil:
-      leftDone = false
-      walk = walk.headers[k].right
-    elif not walk.headers[k].parent.isNil:
-      while not walk.headers[k].parent.isNil and walk == walk.headers[k].parent.headers[k].right:
-        walk = walk.headers[k].parent
-      if walk.headers[k].parent.isNil:
-        break
-      walk = walk.headers[k].parent
+proc toString[T](node: ptr Node[T], k: static int): string =
+  if node.isNil:
+    return
+  result = '[' & $node.headers[k].left & ' ' & $node.value & 
+           ':' & $node.priority & ' ' & $node.headers[k].right & ']'
+
+
+proc `$`[T](m: Multiindex[T]): string =
+  result = "size: " & $m.counter & '\n'
+  staticFor k, 0, T.tupleLen:
+    result = result & $k & " tree: " & m.roots[k].toString(k) & '\n'
+
+proc len[T](m: Multiindex[T]): int =
+  m.counter
+
+
+proc first[T](m: Multiindex[T], k: static int): ptr Node[T] =
+  if m.roots[k].isNil:
+    return nil
+
+  result = m.roots[k]
+  while not result.headers[k].left.isNil:
+    result = result.headers[k].left
+
+
+proc last[T](m: Multiindex[T], k: static int): ptr Node[T] =
+  if m.roots[k].isNil:
+    return nil
+
+  result = m.roots[k]
+  while not result.headers[k].right.isNil:
+    result = result.headers[k].right
+
+
+proc next[T](node: var ptr Node[T], k: static int) =
+  if node.headers[k].right.isNil:
+    while not node.headers[k].parent.isNil and node == node.headers[k].parent.headers[k].right:
+      node = node.headers[k].parent
+    node = node.headers[k].parent
+  else:
+    node = node.headers[k].right
+    while not node.headers[k].left.isNil:
+      node = node.headers[k].left
+
+
+proc prev[T](node: var ptr Node[T], k: static int) =
+  if node.headers[k].left.isNil:
+    while not node.headers[k].parent.isNil and node == node.headers[k].parent.headers[k].left:
+      node = node.headers[k].parent
+    node = node.headers[k].parent
+  else:
+    node = node.headers[k].left
+    while not node.headers[k].right.isNil:
+      node = node.headers[k].right
+
+
+proc rotateLeft[T](m: var Multiindex[T], k: static int, u: ptr Node[T]) =
+  let w = u.headers[k].right
+  w.headers[k].parent = u.headers[k].parent
+  if not w.headers[k].parent.isNil:
+    if w.headers[k].parent.headers[k].left == u:
+      w.headers[k].parent.headers[k].left = w
     else:
-      break
+      w.headers[k].parent.headers[k].right = w
+  u.headers[k].right = w.headers[k].left
+  if not u.headers[k].right.isNil:
+    u.headers[k].right.headers[k].parent = u
+  u.headers[k].parent = w
+  w.headers[k].left = u
+  if u == m.roots[k]:
+    m.roots[k] = w
+    w.headers[k].parent = nil
 
-proc findNode[T: tuple, K](mi: MultiIndex[T], k: static int, key: K): ptr Node[T] =
-  var walk: ptr Node[mi.T]
-  walk = mi.roots[k]
+
+proc rotateRight[T](m: var Multiindex[T], k: static int, u: ptr Node[T]) =
+  let w = u.headers[k].left
+  w.headers[k].parent = u.headers[k].parent
+  if not w.headers[k].parent.isNil:
+    if w.headers[k].parent.headers[k].left == u:
+      w.headers[k].parent.headers[k].left = w
+    else:
+      w.headers[k].parent.headers[k].right = w
+  u.headers[k].left = w.headers[k].right
+  if not u.headers[k].left.isNil:
+    u.headers[k].left.headers[k].parent = u
+  u.headers[k].parent = w
+  w.headers[k].right = u
+  if u == m.roots[k]:
+    m.roots[k] = w
+    w.headers[k].parent = nil
+
+
+proc incl[T](m: var Multiindex[T], x: T) =
+  let node: ptr Node[T] = create(Node[T])
+  node.value = x
+  node.priority = rand(99)#rand(int.high)
+
+  if m.roots[0].isNil:
+    staticFor k, 0, m.T.tupleLen:
+      m.roots[k] = node
+    return
+
+  # insert new node
+  var walk: ptr Node[T]
+  staticFor k, 0, m.T.tupleLen:
+    walk = m.roots[k]
+    while true:
+      if cmp(node.value[k], walk.value[k]) < 0:
+        if walk.headers[k].left.isNil:
+          walk.headers[k].left = node
+          node.headers[k].parent = walk
+          break
+        else: walk = walk.headers[k].left
+      else:
+        if walk.headers[k].right.isNil:
+          walk.headers[k].right = node
+          node.headers[k].parent = walk
+          break
+        else: walk = walk.headers[k].right
+
+    # preserve heap property through rotations
+    while not node.headers[k].parent.isNil and node.headers[k].parent.priority > node.priority:
+      if node.headers[k].parent.headers[k].right == node:
+        m.rotateLeft(k, node.headers[k].parent)
+      else:
+        m.rotateRight(k, node.headers[k].parent)
+    if node.headers[k].parent.isNil:
+      echo "updating root: ", k
+      m.roots[k] = node
+
+  inc m.counter
+
+
+proc erase[T](m: var Multiindex[T], node: var ptr Node[T]) =
+  var walk: ptr Node[T]
+  staticFor k, 0, m.T.tupleLen:
+    walk = node
+  # move node so that it becomes a leaf
+    while not (walk.headers[k].left.isNil and walk.headers[k].right.isNil):
+      if walk.headers[k].left.isNil:
+        m.rotateLeft(k, walk)
+      elif walk.headers[k].right.isNil:
+        m.rotateRight(k, walk)
+      elif walk.headers[k].left.priority < walk.headers[k].right.priority:
+        m.rotateRight(k, walk)
+      else:
+        m.rotateLeft(k, walk)
+      if m.roots[k] == walk:
+        m.roots[k] = walk.headers[k].parent
+    
+    # remove (leaf) node
+    if walk.headers[k].parent.headers[k].left == walk:
+      walk.headers[k].parent.headers[k].left = nil
+    else:
+      walk.headers[k].parent.headers[k].right = nil
+  
+  dec m.counter
+  `=destroy`(node)
+  dealloc(node)
+
+
+proc find[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+  if m.roots[k].isNil:
+    return nil
+
+  var walk = m.roots[k]
   while true:
-    let rel = cmp(key, walk.value[k])
+    let rel = cmp(x[k], walk.value[k])
     if rel < 0:
       if walk.headers[k].left.isNil:
         break
@@ -99,231 +241,155 @@ proc findNode[T: tuple, K](mi: MultiIndex[T], k: static int, key: K): ptr Node[T
       return walk
   return nil
 
-proc next[T](node: ptr Node[T], k: static int): ptr Node[T] =
-  if node.headers[k].right.isNil:
-    if node.headers[k].parent.headers[k].right == node:
-      return nil
-    else:
-      result = node.headers[k].parent
-  else:
-    result = node.headers[k].right
-    while not result.headers[k].left.isNil:
-      result = result.headers[k].left
 
-proc `=destroy`[T](mi: var MultiIndex[T]) =
-  # in order traversal of the tree for field k
-  var data: seq[ptr Node[T]]
-  for node in mi.nodes(0):
-    data.add(node)
-
-  for i in 0..<data.len:
-    `=destroy`(data[i])
-    dealloc(data[i])
-
-proc len(mi: MultiIndex): int =
-  return mi.counter
-
-proc add(mi: var MultiIndex; val: mi.T) =
-  var node: ptr Node[mi.T] = create(Node[mi.T])
-  node.value = val
-  inc mi.counter
-
-  if mi.roots[0].isNil:
-    # not very defensive programming, but if one 
-    # is unset, then the rest should be as well
-    staticFor k, 0, mi.T.len:
-      mi.roots[k] = node
-    return
-
-  # unbalanced insertion for now
-  # TODO switch to scapegoat tree
-  var walk: ptr Node[mi.T]
-  staticFor k, 0, mi.T.len:
-    walk = mi.roots[k]
-    while true:
-      if cmp(node.value[k], walk.value[k]) < 0:
-        if walk.headers[k].left.isNil:
-          walk.headers[k].left = node
-          node.headers[k].parent = walk
-          break
-        else:
-          walk = walk.headers[k].left
-      else:
-        if walk.headers[k].right.isNil:
-          walk.headers[k].right = node
-          node.headers[k].parent = walk
-          break
-        else:
-          walk = walk.headers[k].right
-    
-iterator items(mi: MultiIndex, k: static int): mi.T =
-  # in order traversal of the tree for field k
-  var 
-    leftDone = false
-    walk = mi.roots[k]
-
-  while not walk.isNil:
-    if not leftDone:
-      while not walk.headers[k].left.isNil:
-        walk = walk.headers[k].left
-    
-    yield walk.value
-
-    leftDone = true
-    if not walk.headers[k].right.isNil:
-      leftDone = false
-      walk = walk.headers[k].right
-    elif not walk.headers[k].parent.isNil:
-      while not walk.headers[k].parent.isNil and walk == walk.headers[k].parent.headers[k].right:
-        walk = walk.headers[k].parent
-      if walk.headers[k].parent.isNil:
-        break
-      walk = walk.headers[k].parent
-    else:
-      break
-
-proc hasKey[T: tuple, K](mi: MultiIndex[T], k: static int, key: K): bool =
-  not findNode(mi, k, key).isNil
-
-proc find[T: tuple, K](mi: MultiIndex[T], k: static int, key: K): T =
-  # find the first occurence of key ordered by dimension k
-  let node = findNode(mi, k, key)
-  if node.isNil:
-    raise newException(KeyError, "key not found: " & $key)
-  return node.value
-
-proc del[T](mi: var MultiIndex[T], val: T) =
-  var node = findNode(mi, 0, val[0])
-  if node.isNil:
-    return
-  while node.value != val:
-    node = node.next(0)
-  echo node.value, val
-  staticFor k, 0, mi.T.len:
-    if node.headers[k].left.isNil and node.headers[k].right.isNil:
-      # leaf node
-      if node.headers[k].parent.headers[k].left == node:
-        node.headers[k].parent.headers[k].left = nil
-      else:
-        node.headers[k].parent.headers[k].right = nil
-    elif node.headers[k].left.isNil xor node.headers[k].right.isNil:
-      # node has single child
-      if node.headers[k].left.isNil:
-        if node.headers[k].parent.headers[k].left == node:
-          node.headers[k].parent.headers[k].left = node.headers[k].right
-        else:
-          node.headers[k].parent.headers[k].right = node.headers[k].right
-      else:
-        if node.headers[k].parent.headers[k].left == node:
-          node.headers[k].parent.headers[k].left = node.headers[k].left
-        else:
-          node.headers[k].parent.headers[k].right = node.headers[k].left
-    else:
-      # node has two children
-      var next = node.next(k)
-      if next.headers[k].parent.headers[k].left == next:
-        next.headers[k].parent.headers[k].left = nil
-      else:
-        next.headers[k].parent.headers[k].right = nil
-      next.headers[k] = node.headers[k]
-
-  `=destroy`(node)
-  dealloc(node)
-
-proc contains[T](mi: MultiIndex, val: T): bool =
-  for node in mi.nodes(0):
-    if node.value == val:
-      return true
-  false
-
-proc `[]`[T, K](mi: MultiIndex[T], k: static int, key: K): MultiIndex[T] =
-  # returns a new multiindex container
-  # subsetted using the key
-  var 
-    node = findNode(mi, k, key)
-
-  if node.isNil:
-    return
-
-  while not node.isNil and node.value[k] == key:
-    result.add(node.value)
-    node = node.next(k)
-
-proc `[]`[T, K](mi: MultiIndex[T], k: static int, slice: HSlice[K, K]): MultiIndex[T] =
-  # returns a new multiindex container
-  # subsetted using the key slice (from..to) inclusive
-  var 
-    node = findNode(mi, k, slice.a)
-
-  if node.isNil:
-    return
-
-  if not mi.hasKey(k, slice.b):
-    return
-
-  var 
-    next = true
-    atB = false
-
-  while not node.isNil and next:
-    result.add(node.value)
-    node = node.next(k)
-    if slice.b == node.value[k]:
-      atB = true
-    else:
-      if atB:
-        next = false
-
-proc union[T](mi1, mi2: MultiIndex[T]): MultiIndex[T] =
-  for item in mi1.items(0):
-    result.add(item)
-  for item in mi2.items(0):
-    result.add(item)
-
-proc `+`[T](mi1, mi2: MultiIndex[T]): MultiIndex[T] {.inline.} =
-  union(mi1, mi2)
+proc find[T](m: Multiindex[T], x: T): ptr Node[T] =
+  var up, down = m.find(0, x[0])
+  while not down.isNil and down.value[0] == x[0]:
+    if down.value == x:
+      return down
+    down.prev()
+  up.next()
+  while not up.isNil and up.value[0] == x[0]:
+    if up.value == x:
+      return up
+    up.next()
+  return nil
 
 
-var mi: MultiIndex[(int, string, float)]
-
-mi.add((1, "howdy", 4.5))
-mi.add((0, "pardner", 3.8))
-mi.add((1, "xavier", 29.3))
-mi.add((0, "another", 22.0))
-
-for x in mi.items(0):
-  echo x
-for x in mi.items(1):
-  echo x
-for x in mi.items(2):
-  echo x
-
-echo "\n"
-echo mi.find(0, 1)
-echo mi.find(1, "xavier")
-echo mi.hasKey(1, "jimmy")
-echo  (1, "xavier", 29.3) in mi
-echo  (3, "jimmy", 129.3) in mi
-
-echo "\n"
-var mi2 = mi[0, 1]
-for x in mi2.items(1):
-  echo x
-
-echo "\n"
-var mi3 = mi[2, 3.8..22.0]
-for x in mi3.items(1):
-  echo x
+proc findFirst[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+  var walk = m.find(k, x)
+  while not walk.isNil and result.value[k] == x:
+    result = walk
+    walk.prev()
 
 
-echo "\n"
-var mi4 = mi + mi2 + mi3
-for x in mi4.items(2):
-  echo x
+proc findFirst[T](m: Multiindex[T], x: T): ptr Node[T] =
+  var walk = m.find(x)
+  while not walk.isNil and result.value == x:
+    result = walk
+    walk.prev()
 
-echo "deleting ", (1, "howdy", 4.5)
-# mi4.del((1, "howdy", 4.5))
-mi4.del((0, "pardner", 3.8))
-echo "produces"
-for x in mi4.items(2):
-  echo x
+
+proc findLast[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
+  var walk = m.find(k, x)
+  while not walk.isNil and result.value[k] == x:
+    result = walk
+    walk.next()
+
+
+proc findLast[T](m: Multiindex[T], x: T): ptr Node[T] =
+  var walk = m.find(x)
+  while not walk.isNil and result.value == x:
+    result = walk
+    walk.next()
+
+
+proc count[T, U](m: Multiindex[T], k: static int, x: U): int =
+  var first, last = m.find(k, x)
+  if first.isNil:
+    return 0
+  last.next()
+  while not first.isNil and first.value[k] == x:
+    first.prev()
+    inc result
+  while not last.isNil and last.value[k] == x:
+    last.next()
+    inc result
+
+
+proc count[T](m: Multiindex[T], x: T): int =
+  var first, last = m.find(x)
+  if first.isNil:
+    return 0
+  last.next()
+  while not first.isNil and first.value == x:
+    first.prev()
+    inc result
+  while not last.isNil and last.value == x:
+    last.next()
+    inc result
+
+
+randomize(1)
+
+var m: Multiindex[(int, string, float)]
+
+m.incl((1, "howdy", 4.5))
+echo m
+m.incl((2, "xavier", 29.3))
+echo m
+m.incl((3, "pardner", 3.8))
+echo m
+m.incl((4, "another", 22.0))
+echo m
+
+for i in 0..<3:
+  echo cast[int](m.roots[i])
+
+block:
+  var it = m.first(0)
+  while not it.isNil:
+    echo it.value, '\t', it.priority, '\t', cast[int](it)
+    it.next(0)
+  it = m.last(0)
+  while not it.isNil:
+    echo it.value, '\t', it.priority
+    it.prev(0)
+  echo " "
+
+block:
+  var it = m.first(1)
+  while not it.isNil:
+    echo it.value, '\t', it.priority, '\t', cast[int](it)
+    it.next(1)
+  it = m.last(1)
+  while not it.isNil:
+    echo it.value, '\t', it.priority
+    it.prev(1)
+  echo " "
+
+block:
+  var it = m.first(2)
+  while not it.isNil:
+    echo it.value, '\t', it.priority, '\t', cast[int](it)
+    it.next(2)
+  it = m.last(2)
+  while not it.isNil:
+    echo it.value, '\t', it.priority
+    it.prev(2)
+  echo " "
+
+m.erase(m.roots[1])
+
+block:
+  var it = m.first(0)
+  while not it.isNil:
+    echo it.value, '\t', it.priority, '\t', cast[int](it)
+    it.next(0)
+  it = m.last(0)
+  while not it.isNil:
+    echo it.value, '\t', it.priority
+    it.prev(0)
+  echo " "
+
+block:
+  var it = m.first(1)
+  while not it.isNil:
+    echo it.value, '\t', it.priority, '\t', cast[int](it)
+    it.next(1)
+  it = m.last(1)
+  while not it.isNil:
+    echo it.value, '\t', it.priority
+    it.prev(1)
+  echo " "
+
+block:
+  var it = m.first(2)
+  while not it.isNil:
+    echo it.value, '\t', it.priority, '\t', cast[int](it)
+    it.next(2)
+  it = m.last(2)
+  while not it.isNil:
+    echo it.value, '\t', it.priority
+    it.prev(2)
+  echo " "
