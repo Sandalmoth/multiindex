@@ -63,6 +63,9 @@
 ## Caveats
 ## -------
 ## 
+## Elements can not be modified without breaking the container.
+## If a modification is necessary, deleting and reinserting is the best option.
+## 
 ## Performance in some operations scale not just with log(N), but also with 
 ## the number of equivalent elements. As tuple position 0 is used as default
 ## performance may improve by ensuring that position 0 is the one where all
