@@ -35,4 +35,15 @@ while not it.isNil:
 # (2, "can")
 # (3, "defeat")
 # (1, "elephants")
+
+it = m.find(0, 3)
+echo it.value
+it.next(1)
+echo it.value
+it.next(0)
+echo it.value
+
+# (3, "defeat")
+# (1, "elephants")
+# (2, "can")
 ```
