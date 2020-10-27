@@ -5,7 +5,7 @@ import
 proc macroReplaceRecursive(old, to: NimNode, ast: NimNode): NimNode =
   # recursively replace all instances of 'old' nimnodes with 'to'
   # in the AST given by 'ast'
-  # TODO: implementation works for this case, but may be flawed
+  # implementation works for this case, but may be flawed in the general case
   # TODO: consider making a better implementation
   result = ast.copyNimTree()
   case result.kind:
@@ -34,8 +34,8 @@ macro staticFor(index: untyped, a, b: static int, body: untyped): untyped =
       macroReplaceRecursive(index, newLit(j), body)
     )
   # debug printing
-  echo "-- Unrolled:", body.repr
-  echo "-- To:", result.repr, '\n'
+  # echo "-- Unrolled:", body.repr
+  # echo "-- To:", result.repr, '\n'
 
 
 type
@@ -219,7 +219,7 @@ proc find[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
 
   var walk = m.roots[k]
   while true:
-    let rel = cmp(x[k], walk.value[k])
+    let rel = cmp(x, walk.value[k])
     if rel < 0:
       if walk.headers[k].left.isNil:
         break
@@ -251,55 +251,55 @@ proc find[T](m: Multiindex[T], x: T): ptr Node[T] =
 
 proc findFirst[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
   var walk = m.find(k, x)
-  while not walk.isNil and result.value[k] == x:
+  while not walk.isNil and walk.value[k] == x:
     result = walk
-    walk.prev()
+    walk.prev(k)
 
 
 proc findFirst[T](m: Multiindex[T], x: T): ptr Node[T] =
-  var walk = m.find(x)
-  while not walk.isNil and result.value == x:
+  var walk = m.find(0, x[0])
+  while not walk.isNil and walk.value == x:
     result = walk
-    walk.prev()
+    walk.prev(0)
 
 
 proc findLast[T, U](m: Multiindex[T], k: static int, x: U): ptr Node[T] =
   var walk = m.find(k, x)
-  while not walk.isNil and result.value[k] == x:
+  while not walk.isNil and walk.value[k] == x:
     result = walk
-    walk.next()
+    walk.next(k)
 
 
 proc findLast[T](m: Multiindex[T], x: T): ptr Node[T] =
-  var walk = m.find(x)
-  while not walk.isNil and result.value == x:
+  var walk = m.find(0, x[0])
+  while not walk.isNil and walk.value == x:
     result = walk
-    walk.next()
+    walk.next(0)
 
 
 proc count[T, U](m: Multiindex[T], k: static int, x: U): int =
   var first, last = m.find(k, x)
   if first.isNil:
     return 0
-  last.next()
+  last.next(k)
   while not first.isNil and first.value[k] == x:
-    first.prev()
+    first.prev(k)
     inc result
   while not last.isNil and last.value[k] == x:
-    last.next()
+    last.next(k)
     inc result
 
 
 proc count[T](m: Multiindex[T], x: T): int =
-  var first, last = m.find(x)
+  var first, last = m.find(0, x[0])
   if first.isNil:
     return 0
-  last.next()
+  last.next(0)
   while not first.isNil and first.value == x:
-    first.prev()
+    first.prev(0)
     inc result
   while not last.isNil and last.value == x:
-    last.next()
+    last.next(0)
     inc result
 
 
@@ -441,3 +441,33 @@ block:
   echo m
   echo "yo"
   echo m2
+
+m.incl((1, "howdy", 4.5))
+m.incl((1, "howdy", 4.5))
+m.incl((2, "a", 1002.0))
+m.incl((2, "b", 1001.0))
+m.incl((2, "c", 1000.0))
+
+staticFor k, 0, 3:
+  block:
+    var it = m.first(k)
+    while not it.isNil:
+      echo it.value, '\t', it.priority, '\t', cast[int](it)
+      it.next(k)
+    echo " "
+
+echo m
+echo m.find(0, 2).value
+echo m.findFirst(0, 2).value
+echo m.findLast(0, 2).value
+var 
+  zz1 = m.findFirst((1, "howdy", 4.5))
+  zz2 = m.findLast((1, "howdy", 4.5))
+zz1.prev(1)
+zz2.next(1)
+echo zz1.value
+echo zz2.value
+
+echo m.count((1, "howdy", 4.5))
+echo m.count(0, 2)
+echo m.count(0, 123123)
