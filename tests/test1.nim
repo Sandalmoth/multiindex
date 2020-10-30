@@ -8,7 +8,7 @@ import multiindex
 
 test "inserting and ordered iteration":
   var 
-    m: Multiindex[(int, float)]
+    m: Multiindex[2, (int, float)]
     v1: seq[int]
     v2: seq[float]
   for i in 0..<100:
@@ -36,7 +36,7 @@ test "inserting and ordered iteration":
 
 test "searching, erasing and reverse iteration":
   var 
-    m: Multiindex[(int, float)]
+    m: Multiindex[2, (int, float)]
     v1: seq[int]
     v2: seq[float]
     v3: seq[(int, float)]
@@ -71,7 +71,7 @@ test "searching, erasing and reverse iteration":
         
 test "counting":
   var 
-    m: Multiindex[(int, int)]
+    m: Multiindex[2, (int, int)]
     v1: seq[int]
     v2: seq[int]
     v3: seq[(int, int)]
