@@ -6,7 +6,7 @@ Insertion, deletion, and searching are all O(log(N)) on average.
 ```nim
 import multiindex
 
-var m: Multiindex[(int, string)]
+var m: Multiindex[2, (int, string)]
 
 m.incl((3, "defeat"))
 m.incl((1, "elephants"))
