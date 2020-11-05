@@ -93,3 +93,64 @@ test "counting":
       check m.count(0, z) == v1.count(z)
       check m.count(1, z) == v2.count(z)
       check m.count((z, z)) == v3.count((z, z))
+
+
+test "iterator":
+  var 
+    m: Multiindex[2, (int, float)]
+    v1: seq[int]
+    v2: seq[float]
+  for i in 0..<100:
+    m.clear()
+    v1.setLen(0)
+    v2.setLen(0)
+    for j in 0..<100:
+      let
+        x = rand(999)
+        y = rand(1.0)
+      v1.add(x)
+      v2.add(y)
+      m.incl((x, y))
+    v1.sort()
+    v2.sort()
+    var k = 0
+    for x in m.items(0):
+      check x[0] == v1[k]
+      inc k
+    k = 0
+    for x in m.items(1):
+      check x[1] == v2[k]
+      inc k
+
+
+test "modifyable iterator":
+  var 
+    m: Multiindex[2, (int, float, int)]
+    v1: seq[int]
+    v2: seq[float]
+    v3: seq[int]
+  for i in 0..<100:
+    m.clear()
+    v1.setLen(0)
+    v2.setLen(0)
+    v3.setLen(0)
+    for j in 0..<100:
+      let
+        x = rand(999)
+        y = rand(1.0)
+        z = rand(999)
+      v1.add(x)
+      v2.add(y)
+      m.incl((x, y, z))
+    v1.sort()
+    v2.sort()
+    for x in m.mitems(0):
+      let z = rand(999)
+      v3.add(z)
+      x[2] = z
+    for x in m.mitems(1):
+      x[2] *= x[2]
+    var k = 0
+    for x in m.items():
+      check x[2] == v3[k]*v3[k]
+      inc k

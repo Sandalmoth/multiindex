@@ -49,10 +49,9 @@
 ##   # (4, "a")
 ##   # (5, "bug")
 ##
-##   it = m.first(1)
-##   while not it.isNil:
-##     echo it.value
-##     it.next(1)
+##   # iterator for items in given dimension
+##   for x in m.items(1):
+##     echo x
 ## 
 ##   # (4, "a")
 ##   # (5, "bug")
@@ -437,7 +436,7 @@ proc count*[K, T](m: Multiindex[K, T], x: T): int =
 
 
 proc clear*[K, T](m: var Multiindex[K, T]) =
-  ## Remove all elements from the container.
+  ## Destroy and remove all elements from the container.
   var 
     data: seq[ptr Node[K, T]]
     walk = m.first(0)
@@ -455,20 +454,22 @@ proc clear*[K, T](m: var Multiindex[K, T]) =
     m.roots[k] = nil
 
 
-proc `=destroy`[K, T](m: var Multiindex[K, T]) =
-  # in order traversal of the tree for field k
+proc `=destroy`*[K, T](m: var Multiindex[K, T]) =
+  ## Destroy and remove all elements before destroying.
   m.clear()
 
 
 # default version should work just the same
-# proc `=sink`[K, T](a: var Multiindex[K, T], b: Multiindex[K, T]) =
+# proc `=sink`*[K, T](a: var Multiindex[K, T], b: Multiindex[K, T]) =
 #   `=destroy`(a)
 #   wasMoved(a)
 #   a.roots = b.roots
 #   a.counter = b.counter
 
 
-proc `=copy`[K, T](a: var Multiindex[K, T], b: Multiindex[K, T]) =
+proc `=copy`*[K, T](a: var Multiindex[K, T], b: Multiindex[K, T]) =
+  ## Copy by elementwise insertion. NlogN complexity.
+  # Can this be done faster than NlogN?
   if a.roots == b.roots:
     return
   `=destroy`(a)
@@ -477,3 +478,23 @@ proc `=copy`[K, T](a: var Multiindex[K, T], b: Multiindex[K, T]) =
   while not walk.isNil:
     a.incl(walk.value)
     walk.next(0)
+
+
+iterator items*[K, T](m: Multiindex[K, T], k: static int = 0): T =
+  ## Iterate over items ordered by dimension ``k``. If unspecified,
+  ## defaults to dimension 0.
+  var it = m.first(k)
+  while not it.isNil:
+    yield it.value
+    it.next(k)
+
+
+iterator mitems*[K, T](m: Multiindex[K, T], k: static int = 0): var T =
+  ## Iterate over items ordered by dimension ``k``. If unspecified,
+  ## defaults to dimension 0. The return value may be modified, which alters 
+  ## the container. Thus, the container may break if modified in an indexed
+  ## dimension.
+  var it = m.first(k)
+  while not it.isNil:
+    yield it.value
+    it.next(k)

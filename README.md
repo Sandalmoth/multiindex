@@ -25,10 +25,8 @@ while not it.isNil:
 # (4, "a")
 # (5, "bug")
 
-it = m.first(1)
-while not it.isNil:
-  echo it.value
-  it.next(1)
+for x in m.items(1):
+  echo x
 
 # (4, "a")
 # (5, "bug")
