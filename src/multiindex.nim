@@ -74,13 +74,14 @@
 ## elements have the least amount of overlap.
 ##
 ## The container is not deterministic with regards to equivalent keys.
-## It does not support multithreading
-## and makes calls to the default instance of rand.
+## Each instance has it's own random number generator, hence may be used
+## in threads. However, they are not designed for sharing between threads
 ## 
 
 
 import 
-  macros, typetraits, random
+  macros, typetraits,
+  multiindex/private/lcg
 
 
 proc macroReplaceRecursive(old, to: NimNode, ast: NimNode): NimNode =
@@ -139,6 +140,7 @@ type
     ## are carried along and can be accessed, but not searched.
     roots: array[K, ptr Node[K, T]]
     counter: int
+    rng: Lcg
 
 
 proc toString[K, T](node: ptr Node[K, T], k: static int): string =
@@ -157,6 +159,13 @@ proc `$`*[K, T](m: Multiindex[K, T]): string =
 proc len*[K, T](m: Multiindex[K, T]): int =
   ## Returns the number of items in ``m``.
   m.counter
+
+
+proc seed*[K, T](m: Multiindex[K, T], seed: uint64) =
+  ## Seed the internal random number generatior
+  ## Note that the generator automatically seeds itself
+  ## using times.getTime() upon first incl() operation
+  m.rng.seed(seed)
 
 
 proc first*[K, T](m: Multiindex[K, T], k: static int): ptr Node[K, T] =
@@ -243,7 +252,7 @@ proc incl*[K, T](m: var Multiindex[K, T], x: T) =
   ## Add a tuple ``x`` to the container ``m``
   let node: ptr Node[K, T] = create(Node[K, T])
   node.value = x
-  node.priority = rand(int.high)
+  node.priority = m.rng.rand().int
 
   if m.roots[0].isNil:
     for k in 0..<K:
