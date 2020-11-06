@@ -1,6 +1,6 @@
 # Package
 
-version       = "1.2.0"
+version       = "1.3.0"
 author        = "Jonathan Lindström"
 description   = "Container for tuples ordered in every dimension"
 license       = "Zlib"

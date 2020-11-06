@@ -154,3 +154,46 @@ test "modifyable iterator":
     for x in m.items():
       check x[2] == v3[k]*v3[k]
       inc k
+        
+
+test "lower bound":
+  var 
+    m: Multiindex[2, (int, float)]
+  for i in 0..<100:
+    m.clear()
+    for j in 0..<100:
+      let
+        x = rand(99)
+        y = rand(1.0)
+      m.incl((x, y))
+    for j in 0..<100:
+      let z = rand(99)
+      var
+        it = m.lower_bound(0, z)
+        it2 = it
+      if it.isNil:
+        check z >= m.last(0).value[0]
+        continue
+      it2.prev(0)
+      check it.value[0] >= z
+      if not it2.isNil:
+        check it2.value[0] < z
+      
+    #   if rand(1.0) > 0.5:
+    #     v3.add((x, y))
+    #   else:
+    #     v1.add(x)
+    #     v2.add(y)
+    # v1.sort()
+    # v2.sort()
+    # v3.shuffle()
+    # for x in v3:
+    #   m.excl(m.find(x))
+    # var
+    #   it1 = m.last(0)
+    #   it2 = m.last(1)
+    # for j in countdown(v1.len - 1, 0):
+    #   check it1.value[0] == v1[j]
+    #   check it2.value[1] == v2[j]
+    #   it1.prev(0)
+    #   it2.prev(1)

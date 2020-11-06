@@ -498,3 +498,35 @@ iterator mitems*[K, T](m: Multiindex[K, T], k: static int = 0): var T =
   while not it.isNil:
     yield it.value
     it.next(k)
+
+
+proc lowerBound*[K, T, U](m: Multiindex[K, T], k: static int, x: U): ptr Node[K, T] =
+  ## Find the first element that doesn't go before value ``x`` in tuple dimension ``k``.
+  ## I.e. it is either greater than or equal  to the ``x`` in dimention ``k``.
+  ## lowerBound() is useful for going over all items in a range, even if the low
+  ## end of the range is not present in the container.
+  if m.roots[k].isNil:
+    return nil
+
+  var walk = m.roots[k]
+  while true:
+    let rel = cmp(x, walk.value[k])
+    if rel < 0:
+      if walk.headers[k].left.isNil:
+        break
+      else:
+        walk = walk.headers[k].left
+    elif rel > 0:
+      if walk.headers[k].right.isNil:
+        break
+      else:
+        walk = walk.headers[k].right
+    else:
+      break
+
+  result = walk  
+  while not walk.isNil and walk.value[k] == x:
+    result = walk
+    walk.prev(k)
+  if cmp(result.value[k], x) < 0:
+    result.next(k)
